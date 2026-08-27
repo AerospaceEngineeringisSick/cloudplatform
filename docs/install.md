@@ -51,18 +51,76 @@ Tailscale address. For WireGuard, set it to your tunnel subnet instead, e.g.
 
 ## 3. Storage
 
-**The 1 TB volume.** Attach and mount it at `/mnt/hdd`, with an `fstab` entry so
-it survives a reboot:
+### The 1 TB volume — look before you touch it
+
+**Most providers ship this disk already formatted and mounted.** Check before
+doing anything else:
 
 ```bash
-sudo mkfs.ext4 /dev/sdb          # ONLY if it is empty — this destroys data
-sudo mkdir -p /mnt/hdd
-echo "/dev/sdb /mnt/hdd ext4 defaults,noatime 0 2" | sudo tee -a /etc/fstab
-sudo mount -a
+lsblk -f
+df -h
+```
+
+If you see the disk with a filesystem and a mountpoint — commonly `/mnt/data` —
+**it is done. Do not format it.** Skip to *Point the platform at it* below.
+
+> `mkfs` destroys everything on the target in seconds and asks no questions.
+> Run it only against a device that `lsblk -f` shows with an empty FSTYPE
+> column. If you are unsure, you do not need to run it.
+
+**Only if the disk is genuinely raw** (no FSTYPE, no mountpoint):
+
+```bash
+lsblk -f                              # confirm the target is empty FIRST
+sudo mkfs.ext4 /dev/sdb1              # the PARTITION, not /dev/sdb
+sudo mkdir -p /mnt/data
+```
+
+### Point the platform at it
+
+There is nothing special about `/mnt/hdd`; the platform reads one variable.
+Set it in `.env` to wherever the disk actually is:
+
+```bash
+HDD_PATH=/mnt/data
+```
+
+That single setting feeds Immich's library, Jellyfin's local media, Syncthing's
+folders and the tiering engine. Moving the mount to match the docs is wasted
+work — change the variable instead.
+
+### Make sure it survives a reboot
+
+```bash
+findmnt /mnt/data                     # already mounted?
+grep -i sdb /etc/fstab                # already persistent?
+```
+
+If there is no `fstab` entry, add one **by UUID** — device names can reorder
+between boots, and an `fstab` line naming `/dev/sdb` can then mount the wrong
+disk:
+
+```bash
+sudo blkid /dev/sdb1
+echo "UUID=<uuid-from-above>  /mnt/data  ext4  defaults,noatime  0  2" | sudo tee -a /etc/fstab
+sudo mount -a                         # silence means success
 ```
 
 `noatime` is deliberate: it avoids a metadata write on every read. The tiering
 engine falls back to modification time, so nothing is lost.
+
+Finally, create the layout and take ownership, so containers running as your
+UID can write to it:
+
+```bash
+sudo mkdir -p "$HDD_PATH"/{Media/{Movies,TV,Music},Photos,Sync,Downloads,Projects,Snapshots}
+sudo chown -R "$USER:$USER" "$HDD_PATH"
+```
+
+> Every command from here on needs root. Either prefix each with `sudo`, or
+> take a root shell once with `sudo -i`. Note that `sudo echo ... >> /etc/fstab`
+> does **not** work — the redirect runs as your own user, so the write is
+> refused. Use `| sudo tee -a` as above.
 
 **The StorageBox.** Configure the rclone remote first:
 
