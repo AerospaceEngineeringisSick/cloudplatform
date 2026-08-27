@@ -148,6 +148,28 @@ sudo docker compose -f stack/docker-compose.games.yml start minecraft
 
 Stop the service before restoring its data. Always.
 
+## The Caddy image will not build
+
+```
+undefined: zaplog.HandlerOptions
+failed to solve: process "/bin/sh -c xcaddy build ..." did not complete successfully
+```
+
+xcaddy compiles Caddy and its plugins as a single Go module graph, so an
+unpinned plugin can pull a shared dependency forward past what the pinned
+Caddy version compiles against. The error names a symbol inside Caddy's own
+source, which makes it look like Caddy is broken; it is really a version skew.
+
+`stack/caddy/Dockerfile` pins the Caddy version *and* both plugin versions for
+exactly this reason. If you bump one, bump them together and rebuild:
+
+```bash
+docker compose -f stack/docker-compose.core.yml build --no-cache proxy
+```
+
+The image build ends with a `caddy list-modules` check, so a plugin that fails
+to link breaks the build rather than surfacing as a mysterious 500 at runtime.
+
 ## Certificates will not issue
 
 ```bash
