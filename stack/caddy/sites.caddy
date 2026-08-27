@@ -1,0 +1,160 @@
+# Site definitions, shared by both Caddyfile variants.
+#
+# The split that carries the whole security model:
+#
+#   PUBLIC   media.   photos.        reachable from anywhere, hardened
+#   VPN ONLY panel.  host.  sync.    403 from anywhere else
+#
+# Admin surfaces of the *public* services are also pulled behind the VPN, so
+# what is exposed to the internet is only what streaming and uploading need.
+
+# --------------------------------------------------------------- snippets --
+
+(hardened) {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Cross-Origin-Opener-Policy "same-origin"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+		-X-Powered-By
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+		format json
+	}
+}
+
+# Refuses anything arriving from outside the VPN.
+#
+# IMPORTANT: this compares the *connecting* address. If you ever put Cloudflare
+# (or any proxy) in front with its orange cloud on, every request will arrive
+# from the proxy's address and this check will reject everyone — including you.
+# Keep panel, host and sync on grey-cloud / DNS-only records. See docs/security.md.
+(vpn_only) {
+	@outside not remote_ip {$TAILSCALE_CIDR} 127.0.0.1/32 ::1
+	respond @outside "Not available on this network." 403 {
+		close
+	}
+}
+
+# ----------------------------------------------------------------- public --
+
+# Jellyfin. Public so a link can be shared and a TV app can reach it, but the
+# administrative surface is not: plugin installation is remote code execution,
+# and Jellyfin has no brute-force protection of its own.
+media.{$DOMAIN} {
+	import hardened
+
+	# Nothing on the public path legitimately uploads more than a few MB.
+	request_body {
+		max_size 10MB
+	}
+
+	# Server administration — configuration, plugins, scheduled tasks, logs and
+	# API keys. Blocking these does not affect playback from any client.
+	@admin path /System/Configuration* /System/Restart /System/Shutdown \
+		/System/Logs* /ScheduledTasks* /Plugins* /Repositories* /Startup* \
+		/Auth/Keys* /Users/New /Users/Delete* /metrics
+	@admin_outside {
+		path /System/Configuration* /System/Restart /System/Shutdown \
+			/System/Logs* /ScheduledTasks* /Plugins* /Repositories* /Startup* \
+			/Auth/Keys* /Users/New /Users/Delete* /metrics
+		not remote_ip {$TAILSCALE_CIDR} 127.0.0.1/32 ::1
+	}
+	respond @admin_outside "Administration is available on the private network only." 403 {
+		close
+	}
+
+	# The public user list lets anyone enumerate account names. Clients fall
+	# back to a typed username, which is what we want anyway.
+	@userlist {
+		path /Users/Public
+		not remote_ip {$TAILSCALE_CIDR} 127.0.0.1/32 ::1
+	}
+	respond @userlist "[]" 200 {
+		close
+	}
+
+	# Throttle the login endpoint. Jellyfin will happily accept guesses forever.
+	@login path /Users/AuthenticateByName
+	rate_limit @login {
+		zone jellyfin_login {
+			key {remote_host}
+			events 10
+			window 1m
+		}
+	}
+
+	reverse_proxy jellyfin:8096 {
+		# Streaming: never buffer, or seeking becomes unusable.
+		flush_interval -1
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# Immich. Public so phones back up photos without needing the VPN on.
+photos.{$DOMAIN} {
+	import hardened
+
+	# Phone video uploads are genuinely large; Immich chunks them, but leave
+	# generous headroom.
+	request_body {
+		max_size 50GB
+	}
+
+	@login path /api/auth/login /api/auth/admin-sign-up
+	rate_limit @login {
+		zone immich_login {
+			key {remote_host}
+			events 10
+			window 1m
+		}
+	}
+
+	reverse_proxy immich:2283 {
+		flush_interval -1
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# --------------------------------------------------------------- VPN only --
+
+# The control centre. This is every key to the machine.
+panel.{$DOMAIN} {
+	import hardened
+	import vpn_only
+
+	reverse_proxy dashboard:8787 {
+		# The live telemetry stream is a long-lived WebSocket.
+		flush_interval -1
+	}
+}
+
+# Syncthing's web UI. Sync traffic itself is peer-to-peer on 22000 and does
+# not pass through here.
+sync.{$DOMAIN} {
+	import hardened
+	import vpn_only
+
+	reverse_proxy host.docker.internal:8384 {
+		header_up Host {upstream_hostport}
+	}
+}
+
+# Raw host management, for when the dashboard itself is the problem.
+host.{$DOMAIN} {
+	import hardened
+	import vpn_only
+
+	reverse_proxy host.docker.internal:9090
+}
+
+# Minecraft is not HTTP; its compose file publishes 25565 directly.

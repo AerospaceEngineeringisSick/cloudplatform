@@ -22,11 +22,12 @@ This is the single most valuable control, and it is architectural rather than
 a setting:
 
 ```
-  internet ──▶ Caddy ──┬──▶ media.example.com   Jellyfin    public
-                       ├──▶ cloud.example.com   Nextcloud   public
+  internet ──▶ Caddy ──┬──▶ media.example.com    Jellyfin    public, hardened
+                       ├──▶ photos.example.com   Immich      public, hardened
                        │
-                       ├──▶ panel.example.com   dashboard   403 unless VPN
-                       └──▶ host.example.com    Cockpit     403 unless VPN
+                       ├──▶ panel.example.com    dashboard   403 unless VPN
+                       ├──▶ sync.example.com     Syncthing   403 unless VPN
+                       └──▶ host.example.com     Cockpit     403 unless VPN
 ```
 
 The dashboard binds to `127.0.0.1` and is published only through Caddy, which
@@ -34,10 +35,49 @@ refuses any request whose source address is outside the VPN range. **A leaked
 dashboard password is not enough to reach the dashboard**, because nothing
 routes there from the internet.
 
-Jellyfin and Nextcloud are public on purpose — a media link you cannot share,
-and a phone that cannot sync without a VPN, are not worth the security. They
-carry their own authentication and are the two applications here most hardened
-against public exposure.
+Jellyfin and Immich are public on purpose — a media link you cannot share, and
+a phone that cannot back up photos without a VPN, are not worth the security.
+But "public" here does not mean "wide open": see **Hardening the public
+services** below.
+
+Putting Cloudflare's proxy in front of the private hostnames would break this
+outright, because the address Caddy compares would become Cloudflare's rather
+than yours. See [edge.md](edge.md).
+
+## Hardening the public services
+
+Two applications face the internet, and neither ships with brute-force
+protection. Both are narrowed at the proxy rather than trusted as-is.
+
+**Jellyfin's administrative surface is pulled behind the VPN.** Plugin
+installation is remote code execution by design, so these paths return 403 to
+anyone off-VPN:
+
+```
+/System/Configuration*   /System/Restart   /System/Shutdown
+/System/Logs*            /ScheduledTasks*  /Plugins*
+/Repositories*           /Startup*         /Auth/Keys*
+/Users/New               /Users/Delete*    /metrics
+```
+
+None of that is used by playback, so every client — phone, TV, browser —
+keeps working. Administration happens over the VPN.
+
+**Account enumeration is closed.** `/Users/Public` normally returns the list of
+account names so a client can show a login picker. Off-VPN it now returns an
+empty list, so clients ask for a typed username and an attacker learns nothing.
+
+**Login endpoints are rate-limited** at the proxy — ten attempts per minute per
+address for both `/Users/AuthenticateByName` and Immich's `/api/auth/login`.
+Neither application does this itself.
+
+**Request bodies are capped.** Jellyfin's public path accepts 10 MB, which is
+far more than playback ever sends and removes a whole class of abuse. Immich is
+allowed 50 GB because phone video genuinely is that large.
+
+The residual risk is a weak Jellyfin password. Both accounts should use a
+password manager; Jellyfin has no second factor, which is precisely why its
+admin surface is not reachable from the internet.
 
 ## Authentication
 
@@ -164,8 +204,10 @@ a socket proxy such as `tecnativa/docker-socket-proxy` in front and grant only
 `CONTAINERS`, `POST` and `INFO`. The dashboard needs container list, inspect,
 start, stop, restart, update and logs — nothing else.
 
-**Public services are public.** Jellyfin and Nextcloud are exposed by design.
-Keep them updated; they are the front door.
+**Public services are public.** Jellyfin and Immich are exposed by design, and
+neither supports two-factor authentication. The proxy narrows what they expose
+and throttles their logins, but a weak password on either is still the softest
+route in. Keep them updated; they are the front door.
 
 **The browser desktop is root-capable.** It is reachable only over the VPN and
 password-protected, but anyone who reaches it has a real Linux desktop on your
@@ -183,8 +225,8 @@ other accounts is acceptable.
    `sessions` in `/data/cloud.db`.
 3. Change passwords, regenerate recovery codes, remove unknown passkeys.
 4. Read the audit log for what was done and when.
-5. Rotate `SESSION_SECRET`, the Minecraft RCON password, the Nextcloud database
-   password and the StorageBox key.
+5. Rotate `SESSION_SECRET`, the Minecraft RCON password, the Immich database
+   password, the StorageBox key, and any Cloudflare API token.
 6. Check `Backups/` on the StorageBox — it is the one thing an attacker with
    host access can also reach. If you want backups an attacker cannot delete,
    push them to a second remote with append-only credentials.

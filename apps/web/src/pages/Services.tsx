@@ -185,10 +185,15 @@ export function MediaPage() {
 
 export function CloudPage() {
   const { host, containers } = useLive();
-  const nextcloud = containers.find((c) => c.serviceKey === 'nextcloud');
+  const immich = containers.find((c) => c.serviceKey === 'immich');
+  const immichMl = containers.find((c) => c.serviceKey === 'immich-ml');
+  const syncthing = containers.find((c) => c.serviceKey === 'syncthing');
   const database = containers.find((c) => c.serviceKey === 'database');
   const remote = host?.disks.find((d) => d.tier === 'remote');
   const hdd = host?.disks.find((d) => d.tier === 'hdd');
+
+  const photosUp = immich?.state === 'running';
+  const syncUp = syncthing?.state === 'running';
 
   return (
     <div className="page">
@@ -196,82 +201,142 @@ export function CloudPage() {
         <div>
           <h1 className="page-title">Cloud</h1>
           <p className="page-subtitle">
-            Nextcloud turns the local disk and the StorageBox into one personal Drive, reachable
-            from a phone or laptop over HTTPS.
+            Photos and file sync, split into two focused services rather than one that does
+            everything. Browsing arbitrary files is the Storage page's job.
           </p>
         </div>
-        <span className={`badge ${nextcloud?.state === 'running' ? 'badge-good' : ''}`}>
-          <span className={`dot ${nextcloud?.state === 'running' ? 'dot-good' : ''}`} />
-          {nextcloud?.state === 'running' ? 'Online' : 'Offline'}
-        </span>
+        <div className="row" style={{ gap: 8 }}>
+          <span className={`badge ${photosUp ? 'badge-good' : ''}`}>
+            <span className={`dot ${photosUp ? 'dot-good' : ''}`} />
+            Photos {photosUp ? 'online' : 'offline'}
+          </span>
+          <span className={`badge ${syncUp ? 'badge-good' : ''}`}>
+            <span className={`dot ${syncUp ? 'dot-good' : ''}`} />
+            Sync {syncUp ? 'online' : 'offline'}
+          </span>
+        </div>
       </div>
 
-      {!nextcloud && (
+      {!immich && (
         <div style={{ marginBottom: 16 }}>
           <InfoNote>
-            No container labelled <code className="mono">cloud.service=nextcloud</code> was found.
+            No container labelled <code className="mono">cloud.service=immich</code> was found.
             Deploy it with{' '}
             <code className="mono">docker compose -f stack/docker-compose.cloud.yml up -d</code>.
           </InfoNote>
         </div>
       )}
 
-      <div className="grid grid-3" style={{ marginBottom: 16 }}>
+      <div className="grid grid-4" style={{ marginBottom: 16 }}>
         <StatTile
-          label="Fast tier available"
-          value={bytes(hdd?.freeBytes, 0)}
-          caption="local HDD — frequently used files"
+          label="Photo library"
+          value={bytes(hdd?.usedBytes, 1)}
+          caption={`${bytes(hdd?.freeBytes, 0)} free on the warm tier`}
         />
         <StatTile
-          label="Bulk tier available"
+          label="Bulk tier"
           value={remote?.online ? bytes(remote.freeBytes, 0) : 'offline'}
-          caption="StorageBox — documents, photos, archive"
+          caption="StorageBox — archive and backups"
           tone={remote && !remote.online ? 'critical' : undefined}
         />
         <StatTile
-          label="Memory in use"
-          value={bytes(nextcloud?.memUsedBytes)}
+          label="Immich memory"
+          value={bytes(immich?.memUsedBytes)}
+          caption={immich?.memLimitBytes ? `ceiling ${bytes(immich.memLimitBytes, 0)}` : 'unlimited'}
+        />
+        <StatTile
+          label="Photo analysis"
+          value={immichMl?.state === 'running' ? 'Running' : 'Paused'}
           caption={
-            nextcloud?.memLimitBytes ? `ceiling ${bytes(nextcloud.memLimitBytes, 0)}` : 'unlimited'
+            immichMl?.state === 'running'
+              ? `using ${cores(immichMl.cpuUsage, 2)} cores`
+              : 'uploads continue; analysis resumes later'
           }
         />
       </div>
 
       <div className="grid grid-2">
-        <Panel title="How the tiers are wired">
-          <div className="stack" style={{ gap: 14 }}>
-            <TierRow
-              name="Local HDD"
-              detail="Nextcloud's primary data directory. Fast, and included in the nightly backup."
-              path={hdd?.mountpoint ?? '/mnt/hdd'}
-            />
-            <TierRow
-              name="StorageBox (external storage)"
-              detail="Mounted into Nextcloud as external storage over SFTP, so 2 TB of bulk sits alongside local files."
-              path={remote?.mountpoint ?? '/mnt/storagebox'}
-            />
-            <TierRow
-              name="Encrypted vault"
-              detail="An rclone crypt remote for anything that should be unreadable at rest on the provider's disks."
-              path={`${remote?.mountpoint ?? '/mnt/storagebox'}/Vault`}
-            />
+        <Panel title="Immich — photos and video">
+          <div className="stack" style={{ gap: 12 }}>
+            <Row label="Server" value={immich?.status ?? 'not deployed'} />
+            <Row label="Analysis worker" value={immichMl?.status ?? 'not deployed'} />
+            <Row label="Database" value={database?.status ?? 'not deployed'} />
+            <Row label="Server CPU" value={cores(immich?.cpuUsage, 2)} />
+            <Row label="Analysis CPU" value={cores(immichMl?.cpuUsage, 2)} />
+            <hr className="divider" style={{ margin: '4px 0' }} />
+            <InfoNote>
+              The analysis worker is what makes faces and search work, and it is the expensive
+              half. Gaming, Media and Desktop modes stop it outright — phones keep uploading,
+              and the backlog is processed once the machine is free again.
+            </InfoNote>
           </div>
         </Panel>
 
-        <Panel title="Services">
-          <div className="stack" style={{ gap: 10 }}>
-            <Row label="Nextcloud" value={nextcloud?.status ?? 'not deployed'} />
-            <Row label="Database" value={database?.status ?? 'not deployed'} />
-            <Row label="Nextcloud CPU" value={cores(nextcloud?.cpuUsage, 2)} />
-            <Row label="Database CPU" value={cores(database?.cpuUsage, 2)} />
+        <Panel title="Syncthing — file sync">
+          <div className="stack" style={{ gap: 12 }}>
+            <Row label="Status" value={syncthing?.status ?? 'not deployed'} />
+            <Row label="CPU" value={cores(syncthing?.cpuUsage, 2)} />
+            <Row label="Memory" value={bytes(syncthing?.memUsedBytes)} />
             <hr className="divider" style={{ margin: '4px 0' }} />
+            <div className="stack" style={{ gap: 10 }}>
+              <TierRow
+                name="Sync folders"
+                detail="Mirrored to your laptops peer-to-peer. No account, no server-side copy of your credentials."
+                path={`${hdd?.mountpoint ?? '/mnt/hdd'}/Sync`}
+              />
+              <TierRow
+                name="Projects"
+                detail="Shared separately so a laptop can take just this folder."
+                path={`${hdd?.mountpoint ?? '/mnt/hdd'}/Projects`}
+              />
+            </div>
             <InfoNote>
-              Nextcloud is exposed publicly through Caddy with automatic HTTPS. The dashboard
-              itself is not — it stays on the VPN.
+              The web interface is on the VPN only. Sync traffic itself is peer-to-peer on port
+              22000 and never passes through the proxy.
             </InfoNote>
           </div>
         </Panel>
       </div>
+
+      <Panel title="What replaced what" style={{ marginTop: 16 }}>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Need</th>
+                <th>Handled by</th>
+                <th>Reachable from</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Phone photo backup</td>
+                <td>Immich</td>
+                <td>Anywhere, over HTTPS</td>
+              </tr>
+              <tr>
+                <td>Folder sync between laptops</td>
+                <td>Syncthing</td>
+                <td>Peer-to-peer, no proxy</td>
+              </tr>
+              <tr>
+                <td>Browsing and moving files</td>
+                <td>This dashboard's Storage page</td>
+                <td>VPN only</td>
+              </tr>
+              <tr>
+                <td>Bulk and archive storage</td>
+                <td>StorageBox, via the tiering rules</td>
+                <td>VPN only</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="small muted" style={{ marginTop: 12 }}>
+          Calendar and contact sync were the one thing Nextcloud did that nothing here
+          replaces. Radicale is about 30 MB if you want it back.
+        </p>
+      </Panel>
     </div>
   );
 }

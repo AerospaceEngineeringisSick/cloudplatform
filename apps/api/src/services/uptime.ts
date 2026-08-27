@@ -314,7 +314,9 @@ export function seedDefaultChecks(): void {
 
   const defaults: { name: string; kind: UptimeCheck['kind']; target: string }[] = [
     { name: 'Jellyfin', kind: 'container', target: 'jellyfin' },
-    { name: 'Nextcloud', kind: 'container', target: 'nextcloud' },
+    { name: 'Immich', kind: 'container', target: 'immich' },
+    { name: 'Syncthing', kind: 'container', target: 'syncthing' },
+    { name: 'Database', kind: 'container', target: 'database' },
     { name: 'Reverse proxy', kind: 'container', target: 'proxy' },
     { name: 'StorageBox mount', kind: 'mount', target: '/mnt/storagebox' },
     { name: 'Local HDD', kind: 'mount', target: '/mnt/hdd' },

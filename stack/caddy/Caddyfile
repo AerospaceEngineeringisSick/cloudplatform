@@ -1,94 +1,18 @@
-# Reverse proxy for the personal cloud platform.
+# Default: certificates are issued over the HTTP-01 challenge.
 #
-# The split that matters:
-#   * Public hostnames get automatic HTTPS and are reachable from anywhere.
-#   * The control plane answers ONLY on the VPN interface. A leaked dashboard
-#     password is useless from the public internet because nothing routes there.
-
+# This requires ports 80 and 443 to be reachable from the internet for every
+# hostname — including panel and host, whose 403 is applied only after the
+# certificate exists.
+#
+# If you would rather not expose port 80 at all, or would rather panel and host
+# did not appear in public DNS, switch to the DNS-01 variant:
+#
+#   CADDYFILE=Caddyfile.dns  in .env, plus a Cloudflare API token
 {
 	email {$ACME_EMAIL}
-	# Uncomment while testing so you do not burn Let's Encrypt rate limits.
-	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 	servers {
 		protocols h1 h2 h3
 	}
 }
 
-# Applied to every public site below.
-(public) {
-	encode zstd gzip
-
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		X-Content-Type-Options "nosniff"
-		Referrer-Policy "strict-origin-when-cross-origin"
-		# Caddy already advertises itself; no need to name versions.
-		-Server
-	}
-
-	log {
-		output file /data/access.log {
-			roll_size 20MiB
-			roll_keep 5
-		}
-		format json
-	}
-}
-
-# Only addresses inside the VPN may reach the admin surfaces.
-(vpn_only) {
-	@not_vpn not remote_ip {$TAILSCALE_CIDR} 127.0.0.1/32 ::1
-	respond @not_vpn "Not available on this network." 403
-}
-
-# --------------------------------------------------------------- public ----
-
-# Media. Public so a link can be shared, and so it works on a TV.
-media.{$DOMAIN} {
-	import public
-	reverse_proxy jellyfin:8096 {
-		# Jellyfin streams large files; do not buffer them in the proxy.
-		flush_interval -1
-	}
-}
-
-# Personal cloud. Public so phones sync without the VPN.
-cloud.{$DOMAIN} {
-	import public
-
-	# Nextcloud's service-discovery endpoints must redirect, or clients warn.
-	redir /.well-known/carddav /remote.php/dav 301
-	redir /.well-known/caldav /remote.php/dav 301
-
-	request_body {
-		# Large uploads from a phone.
-		max_size 10GB
-	}
-
-	reverse_proxy nextcloud:80 {
-		header_up X-Forwarded-Proto https
-	}
-}
-
-# ------------------------------------------------------------ VPN only ----
-
-# The control centre. This is the whole platform's keys — keep it off the
-# public internet.
-panel.{$DOMAIN} {
-	import public
-	import vpn_only
-
-	reverse_proxy dashboard:8787 {
-		# The live telemetry stream is a long-lived WebSocket.
-		flush_interval -1
-	}
-}
-
-# Raw host management, for when the dashboard itself is the problem.
-host.{$DOMAIN} {
-	import public
-	import vpn_only
-	reverse_proxy host.docker.internal:9090
-}
-
-# Minecraft is not HTTP; it is published directly on 25565 by its compose file.
+import /etc/caddy/sites.caddy

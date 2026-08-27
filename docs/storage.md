@@ -22,6 +22,8 @@ well is most of what makes this machine feel larger than it is.
 /srv/minecraft        the live world — chunk writes are constant
 /var/cache/jellyfin   transcode scratch
 /var/cache/rclone     the StorageBox VFS cache
+/var/lib/immich/postgres  the photo database — Immich does not support this
+                          on a network share, and it would be unusable there
 /data                 the dashboard's own database
 ```
 
@@ -33,7 +35,8 @@ StorageBox they would be unusable.
 
 ```
 /mnt/hdd/Media/       what you are currently watching
-/mnt/hdd/Cloud/       Nextcloud's primary data directory
+/mnt/hdd/Photos/      Immich's library
+/mnt/hdd/Sync/        Syncthing's shared folders
 /mnt/hdd/Downloads/   staging
 /mnt/hdd/Projects/    active code and large project files
 /mnt/hdd/Snapshots/   local restore points

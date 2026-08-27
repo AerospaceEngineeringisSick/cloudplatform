@@ -81,12 +81,12 @@ STORAGEBOX_PATH="${STORAGEBOX_PATH:-/mnt/storagebox}"
 NVME_CACHE="${NVME_CACHE:-/var/cache/jellyfin}"
 MINECRAFT_PATH="${MINECRAFT_PATH:-/srv/minecraft}"
 
-mkdir -p "$NVME_CACHE" "$MINECRAFT_PATH"
+mkdir -p "$NVME_CACHE" "$MINECRAFT_PATH" "${IMMICH_DB_PATH:-/var/lib/immich/postgres}"
 
 if mountpoint -q "$HDD_PATH"; then
   ok "local HDD mounted at $HDD_PATH"
   # The layout the dashboard and the compose files expect.
-  mkdir -p "$HDD_PATH"/{Media/{Movies,TV,Music},Cloud,Downloads,Projects,Snapshots}
+  mkdir -p "$HDD_PATH"/{Media/{Movies,TV,Music},Photos,Sync,Downloads,Projects,Snapshots}
   ok "created the HDD directory layout"
 else
   warn "$HDD_PATH is not a mount point — is the 1 TB volume attached?"
@@ -94,7 +94,7 @@ fi
 
 if mountpoint -q "$STORAGEBOX_PATH"; then
   ok "StorageBox mounted at $STORAGEBOX_PATH"
-  mkdir -p "$STORAGEBOX_PATH"/{Cloud/{Documents,Photos,Videos,Shared},Media/{Movies,TV,Music},Archive,Vault,Backups/{VPS,Minecraft,Websites,Databases}}
+  mkdir -p "$STORAGEBOX_PATH"/{Cloud/{Documents,Photos,Videos,Shared},Media/{Movies,TV,Music},Archive,Vault,Backups/{VPS,Minecraft,Photos,Databases}}
   ok "created the StorageBox directory layout"
 else
   warn "$STORAGEBOX_PATH is not mounted."
@@ -119,7 +119,7 @@ echo "  1. Open ${BOLD}https://panel.${DOMAIN}${RESET} over your VPN and create 
 echo "     ${DIM}You will be required to set up two-factor authentication immediately.${RESET}"
 echo "  2. Bring up the services you want:"
 echo "       ${DIM}docker compose -f stack/docker-compose.media.yml up -d${RESET}"
-echo "       ${DIM}docker compose -f stack/docker-compose.cloud.yml up -d${RESET}"
+echo "       ${DIM}docker compose -f stack/docker-compose.cloud.yml up -d${RESET}   # photos + sync"
 echo "  3. Leave Minecraft and the desktop stopped — the dashboard starts them on demand."
 echo
 echo "  ${DIM}The dashboard is bound to loopback and published only on the VPN.${RESET}"

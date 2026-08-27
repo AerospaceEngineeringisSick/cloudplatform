@@ -14,6 +14,7 @@ const PROFILE_TINT: Record<ProfileId, string> = {
   gaming: '#a78bfa',
   media: '#fbbf24',
   desktop: '#34d399',
+  quiet: '#94a3b8',
   custom: '#f472b6',
 };
 

@@ -1,0 +1,23 @@
+# Certificates issued over the DNS-01 challenge, using Cloudflare DNS.
+#
+# Worth switching to, because it means:
+#   * port 80 never needs to be open,
+#   * panel and host need no public DNS record at all — put them in your VPN's
+#     private DNS and they become genuinely unreachable rather than merely
+#     refused,
+#   * wildcard certificates work.
+#
+# Needs a Cloudflare API token scoped to exactly one permission:
+#   Zone → DNS → Edit, limited to the single zone.
+# That token cannot read your traffic or change anything else.
+#
+# Enable with CADDYFILE=Caddyfile.dns in .env.
+{
+	email {$ACME_EMAIL}
+	acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+import /etc/caddy/sites.caddy

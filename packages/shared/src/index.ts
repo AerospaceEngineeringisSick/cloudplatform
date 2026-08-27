@@ -177,7 +177,7 @@ export interface ContainerLimits {
 
 /* -------------------------------------------------------------- profiles */
 
-export type ProfileId = 'normal' | 'gaming' | 'media' | 'desktop' | 'custom';
+export type ProfileId = 'normal' | 'gaming' | 'media' | 'desktop' | 'quiet' | 'custom';
 
 export interface ProfileAllocation {
   serviceKey: string;

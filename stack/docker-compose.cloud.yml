@@ -1,6 +1,17 @@
-# Nextcloud with Postgres and Redis. Primary data lives on the local HDD;
-# the StorageBox is attached inside Nextcloud as external storage.
-name: cloud-nextcloud
+# Personal cloud: photos and file sync.
+#
+# Replaces the Nextcloud stack. Two focused tools instead of one that does
+# everything, because on four cores "does everything" is expensive:
+#
+#   Immich     — phone photo and video backup, the problem that actually matters
+#   Syncthing  — folder sync between laptops
+#
+# Web access to arbitrary files is already in the dashboard's own Storage page,
+# so nothing here needs to reimplement it.
+#
+#   docker compose -f stack/docker-compose.cloud.yml up -d
+
+name: cloud-personal
 
 networks:
   edge:
@@ -10,76 +21,156 @@ networks:
     internal: true
 
 volumes:
-  nextcloud-app:
-  postgres-data:
+  immich-model-cache:
+  syncthing-config:
 
 services:
-  nextcloud:
-    image: nextcloud:30-apache
-    container_name: nextcloud
+  # ------------------------------------------------------------------ immich
+
+  immich:
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-v3}
+    container_name: immich
     restart: unless-stopped
     labels:
-      cloud.service: nextcloud
+      cloud.service: immich
     networks: [edge, internal]
     volumes:
-      - nextcloud-app:/var/www/html
-      - ${HDD_PATH:-/mnt/hdd}/Cloud:/var/www/html/data
-      - ${STORAGEBOX_PATH:-/mnt/storagebox}:/mnt/storagebox
+      # Photos live on the warm tier; the tiering sweep can move old ones down.
+      - ${HDD_PATH:-/mnt/hdd}/Photos:/data
+      - /etc/localtime:/etc/localtime:ro
     environment:
-      POSTGRES_HOST: database
-      POSTGRES_DB: nextcloud
-      POSTGRES_USER: nextcloud
-      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:?set NEXTCLOUD_DB_PASSWORD in .env}
-      REDIS_HOST: redis
-      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:-admin}
-      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:?set NEXTCLOUD_ADMIN_PASSWORD in .env}
-      NEXTCLOUD_TRUSTED_DOMAINS: cloud.${DOMAIN}
-      OVERWRITEPROTOCOL: https
-      OVERWRITECLIURL: https://cloud.${DOMAIN}
-      PHP_MEMORY_LIMIT: 768M
-      PHP_UPLOAD_LIMIT: 10G
-    cpus: 1.0
+      DB_HOSTNAME: database
+      DB_USERNAME: ${IMMICH_DB_USER:-immich}
+      DB_PASSWORD: ${IMMICH_DB_PASSWORD:?set IMMICH_DB_PASSWORD in .env}
+      DB_DATABASE_NAME: ${IMMICH_DB_NAME:-immich}
+      REDIS_HOSTNAME: cache
+      # Without this Immich logs Caddy's address for every request, which makes
+      # its own rate limiting and audit trail useless.
+      IMMICH_TRUSTED_PROXIES: 172.16.0.0/12
+      TZ: ${TZ:-Europe/London}
+    cpus: 1.5
     mem_limit: 2g
+    mem_reservation: 768m
     depends_on:
       database:
         condition: service_healthy
-      redis:
+      cache:
         condition: service_started
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:2283/api/server/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # Face recognition and semantic search. Separated so a resource profile can
+  # stop it outright — photos keep uploading, they just are not analysed until
+  # the machine is idle again.
+  immich-ml:
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-v3}
+    container_name: immich-ml
+    restart: unless-stopped
+    labels:
+      cloud.service: immich-ml
+    networks: [internal]
+    volumes:
+      - immich-model-cache:/cache
+    environment:
+      # Defaults to the host's core count, which on this box means all four.
+      MACHINE_LEARNING_REQUEST_THREADS: 2
+      MACHINE_LEARNING_MODEL_INTER_OP_THREADS: 1
+      MACHINE_LEARNING_MODEL_INTRA_OP_THREADS: 2
+      # Release the model from memory after five idle minutes.
+      MACHINE_LEARNING_MODEL_TTL: 300
+      # Pre-allocating an arena is faster but holds RAM this box cannot spare.
+      MACHINE_LEARNING_MODEL_ARENA: "false"
+      TZ: ${TZ:-Europe/London}
+    cpus: 1.0
+    mem_limit: 2500m
+    security_opt:
+      - no-new-privileges:true
+
+  # --------------------------------------------------------------- datastore
 
   database:
-    image: postgres:16-alpine
-    container_name: nextcloud-db
+    # Immich needs the vector extensions; a stock Postgres image will not work.
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    container_name: immich-db
     restart: unless-stopped
     labels:
       cloud.service: database
     networks: [internal]
     volumes:
-      # Databases belong on NVMe, never on the HDD or a remote mount.
-      - postgres-data:/var/lib/postgresql/data
+      # NVMe only. Immich explicitly does not support a network share here, and
+      # a database on the StorageBox would be unusable anyway.
+      - ${IMMICH_DB_PATH:-/var/lib/immich/postgres}:/var/lib/postgresql/data
     environment:
-      POSTGRES_DB: nextcloud
-      POSTGRES_USER: nextcloud
-      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:?set NEXTCLOUD_DB_PASSWORD in .env}
+      POSTGRES_USER: ${IMMICH_DB_USER:-immich}
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD:?set IMMICH_DB_PASSWORD in .env}
+      POSTGRES_DB: ${IMMICH_DB_NAME:-immich}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    shm_size: 128mb
     cpus: 1.0
     mem_limit: 2g
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nextcloud"]
+      test: ["CMD-SHELL", "pg_isready -U ${IMMICH_DB_USER:-immich} -d ${IMMICH_DB_NAME:-immich}"]
       interval: 15s
       timeout: 5s
       retries: 5
-    security_opt:
-      - no-new-privileges:true
+      start_period: 30s
 
-  redis:
-    image: redis:7-alpine
-    container_name: nextcloud-redis
+  cache:
+    image: valkey/valkey:9-alpine
+    container_name: immich-cache
     restart: unless-stopped
     labels:
       cloud.service: cache
     networks: [internal]
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
-    mem_limit: 512m
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    mem_limit: 256m
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping | grep -q PONG || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # --------------------------------------------------------------- syncthing
+
+  syncthing:
+    image: syncthing/syncthing:1
+    container_name: syncthing
+    restart: unless-stopped
+    labels:
+      cloud.service: syncthing
+    networks: [edge]
+    # Sync traffic is peer-to-peer and must reach the internet directly; the
+    # web UI is published only on loopback and proxied to the VPN by Caddy.
+    ports:
+      - "22000:22000/tcp"
+      - "22000:22000/udp"
+      - "21027:21027/udp"
+      - "127.0.0.1:8384:8384"
+    volumes:
+      - syncthing-config:/var/syncthing/config
+      - ${HDD_PATH:-/mnt/hdd}/Sync:/var/syncthing/Sync
+      - ${HDD_PATH:-/mnt/hdd}/Projects:/var/syncthing/Projects
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Europe/London}
+    cpus: 0.75
+    mem_limit: 640m
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8384/rest/noauth/health || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

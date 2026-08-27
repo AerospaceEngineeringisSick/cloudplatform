@@ -5,7 +5,7 @@
 Build the control layer; do not rebuild the infrastructure.
 
 There are excellent tools for the hard parts — Docker for workloads, rclone for
-remote storage, Caddy for TLS, Jellyfin for media, Nextcloud for files. What did
+remote storage, Caddy for TLS, Jellyfin for media, Immich for photos. What did
 not exist was a control layer that understands *this specific machine*: four
 cores that can only really do one heavy thing at a time, and three storage tiers
 with wildly different characteristics.
@@ -95,7 +95,9 @@ Three deliberate choices:
 
 **Profiles address services by label, not by container name.** A container
 carrying `cloud.service=jellyfin` is Jellyfin, whatever it is called and
-whichever compose file defines it.
+whichever compose file defines it. This is also why Immich can be split: the
+server and its machine-learning worker carry different keys, so a profile can
+stop the expensive half without touching uploads.
 
 **Ceilings may sum above four cores.** A CPU quota is a hard cap, not a
 reservation. Idle services never claim theirs, so overcommitting is correct;

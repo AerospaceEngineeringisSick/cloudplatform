@@ -18,7 +18,12 @@ volumes:
 
 services:
   proxy:
-    image: caddy:2.8-alpine
+    # Built rather than pulled: the stock image has neither the Cloudflare DNS
+    # provider nor the rate limiter, and both are load-bearing here.
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
+    image: cloud-caddy:latest
     container_name: caddy
     restart: unless-stopped
     labels:
@@ -30,14 +35,21 @@ services:
       - "443:443"
       - "443:443/udp"
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The whole directory, so sites.caddy can be imported by either variant.
+      - ./caddy:/etc/caddy:ro
       - caddy-data:/data
       - caddy-config:/config
+    # CADDYFILE selects the certificate challenge: the default uses HTTP-01,
+    # Caddyfile.dns uses Cloudflare DNS-01 and needs no inbound port 80.
+    command: ["caddy", "run", "--config", "/etc/caddy/${CADDYFILE:-Caddyfile}", "--adapter", "caddyfile"]
+    extra_hosts:
+      # Lets the proxy reach services published on the host's loopback.
+      - "host.docker.internal:host-gateway"
     environment:
-      # Used by the Caddyfile for the public hostnames.
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
       ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
       TAILSCALE_CIDR: ${TAILSCALE_CIDR:-100.64.0.0/10}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
     healthcheck:
       test: ["CMD", "caddy", "version"]
       interval: 30s
@@ -81,6 +93,7 @@ services:
       MOUNTS: "nvme:NVMe:/:nvme,hdd:HDD:/mnt/hdd:hdd,storagebox:StorageBox:/mnt/storagebox:remote"
       JELLYFIN_URL: ${JELLYFIN_URL:-}
       JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
+      IMMICH_URL: ${IMMICH_URL:-http://immich:2283}
       MC_RCON_HOST: ${MC_RCON_HOST:-minecraft}
       MC_RCON_PORT: ${MC_RCON_PORT:-25575}
       MC_RCON_PASSWORD: ${MC_RCON_PASSWORD:-}

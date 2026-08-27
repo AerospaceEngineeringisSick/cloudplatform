@@ -1,7 +1,7 @@
 # Installation
 
 From a bare Debian or Ubuntu VPS to a working platform. Budget about an hour,
-most of which is waiting for Nextcloud to initialise.
+most of which is waiting for images to pull and Immich to initialise.
 
 ## Before you start
 
@@ -15,23 +15,25 @@ You need:
 
 ## 1. DNS
 
-Point four names at the VPS's public IP:
+Point five names at the VPS's public IP:
 
 ```
-media.example.com    A    203.0.113.10
-cloud.example.com    A    203.0.113.10
-panel.example.com    A    203.0.113.10
-host.example.com     A    203.0.113.10
+media.example.com     A    203.0.113.10     public — Jellyfin
+photos.example.com    A    203.0.113.10     public — Immich
+panel.example.com     A    203.0.113.10     VPN only
+sync.example.com      A    203.0.113.10     VPN only
+host.example.com      A    203.0.113.10     VPN only
 ```
 
-All four resolve publicly, which is fine: `panel` and `host` answer only to
-requests arriving from inside the VPN, and refuse everything else with a 403.
-Caddy still needs them public so it can complete the ACME HTTP challenge and
-issue certificates.
+All five resolve publicly, which is fine by default: the last three answer only
+to requests from inside the VPN and refuse everything else with a 403. Caddy
+still needs them reachable so it can complete the ACME HTTP challenge.
 
-> If you would rather `panel` not appear in public DNS at all, use a DNS-01
-> ACME challenge and a split-horizon record. It is more setup for a modest gain
-> — the 403 already prevents access.
+**If you use Cloudflare for DNS, leave every record grey-clouded (DNS-only).**
+The orange cloud replaces the client address that the VPN check depends on, and
+would lock you out of your own control plane. With a Cloudflare API token you
+can switch to DNS-01 certificates and drop the three private records from public
+DNS entirely — see [edge.md](edge.md).
 
 ## 2. The VPN
 
@@ -110,9 +112,9 @@ The ones that matter:
 | `TAILSCALE_CIDR` | your VPN's range |
 | `NET_IFACE` | check with `ip -br link` |
 | `MC_RCON_PASSWORD` | `openssl rand -hex 24` |
-| `NEXTCLOUD_DB_PASSWORD` | `openssl rand -hex 24` |
-| `NEXTCLOUD_ADMIN_PASSWORD` | your own, and make it long |
+| `IMMICH_DB_PASSWORD` | `openssl rand -hex 24` — letters and digits only |
 | `DESKTOP_PASSWORD` | your own — this desktop is root-capable |
+| `CADDYFILE` | `Caddyfile` (default) or `Caddyfile.dns` for DNS-01 certificates |
 
 > `SESSION_SECRET` must stay stable. Changing it signs everyone out.
 > `WEBAUTHN_RP_ID` must match the hostname exactly, or passkeys will not
@@ -160,15 +162,20 @@ restart the dashboard so it can show streams and transcodes:
 docker compose -f stack/docker-compose.core.yml up -d --force-recreate dashboard
 ```
 
-**Nextcloud** — finish setup at `https://cloud.example.com`. To attach the
-StorageBox as external storage:
+**Immich** — finish setup at `https://photos.example.com`. The first account
+you create is the admin. Install the mobile app on both phones and point it at
+that URL, then turn on backup.
 
-1. Enable the *External storage support* app.
-2. Settings → Administration → External storage.
-3. Add storage: *Local*, pointing at `/mnt/storagebox/Cloud`.
+Two settings worth changing straight away, under Administration → Settings:
 
-Using the already-mounted path is faster and simpler than making Nextcloud open
-its own SFTP session.
+* **Job concurrency** — lower *Smart Search* and *Face Detection* to 1. The
+  defaults assume a machine with more cores than this one.
+* **Storage template** — leave it off unless you want Immich renaming files on
+  disk. Off keeps the library legible to the tiering engine.
+
+**Syncthing** — the web UI is at `https://sync.example.com`, VPN only. Add your
+laptops by device ID and share `/var/syncthing/Sync`. Sync traffic goes
+peer-to-peer on port 22000 and never passes through the proxy.
 
 **Minecraft and the desktop** — build the images but leave them stopped:
 

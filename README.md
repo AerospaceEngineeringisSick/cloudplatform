@@ -6,7 +6,7 @@ single coherent machine rather than a pile of containers.
 
 The idea is deliberately narrow: **build the control layer, not the
 infrastructure.** Docker runs the workloads, rclone moves the bytes, Caddy
-terminates TLS, Jellyfin serves media, Nextcloud serves files. This repository
+terminates TLS, Jellyfin serves media, Immich holds the photos. This repository
 is the one thing that did not already exist — a dashboard that understands
 *this* hardware and gives it a single set of controls.
 
@@ -15,7 +15,7 @@ is the one thing that did not already exist — a dashboard that understands
    ┌──────────────────────────────────────────────┐
    │  CPU │ RAM │ Storage │ Network │ Uptime      │
    │                                              │
-   │  NORMAL   GAMING   MEDIA   DESKTOP   CUSTOM  │
+   │ NORMAL  GAMING  MEDIA  DESKTOP  QUIET  CUSTOM │
    │     └────────── one click ──────────┘        │
    └───────┬──────────┬──────────┬────────────────┘
            │          │          │
@@ -33,13 +33,18 @@ is the one thing that did not already exist — a dashboard that understands
 permanently, you pick what the machine is *for* right now and every container's
 CPU and memory ceiling is rewritten live — no restart, no redeploy.
 
-| Profile | Minecraft | Jellyfin | Desktop | Background jobs |
+| Profile | Minecraft | Jellyfin | Photo analysis | Background jobs |
 |---|---|---|---|---|
-| **Normal** | off | 2.0 cores | off | running |
-| **Gaming** | 3.25 cores, 8 GiB | 0.75 cores | off | paused |
-| **Media** | off | 3.5 cores, transcoding | off | tiering paused |
-| **Desktop** | off | 1.0 core | 2.0 cores, 4 GiB | tiering paused |
+| **Normal** | off | 2.0 cores | running | running |
+| **Gaming** | 3.25 cores, 8 GiB | 0.75 cores | stopped | paused |
+| **Media** | off | 3.5 cores, transcoding | stopped | tiering paused |
+| **Desktop** | off | 1.0 core | stopped | tiering paused |
+| **Quiet** | off | off | stopped | media scan paused |
 | **Custom** | your sliders | | | |
+
+Immich is split in two so this works: uploads keep arriving in every profile,
+while the face-recognition worker — the expensive half — stops whenever the
+machine has something better to do.
 
 Starting Minecraft switches to Gaming by itself. Stopping it hands the
 resources straight back. Nothing is wasted while you are not playing.
@@ -78,7 +83,7 @@ account. Bring up the rest as you want it:
 
 ```bash
 docker compose -f stack/docker-compose.media.yml up -d   # Jellyfin
-docker compose -f stack/docker-compose.cloud.yml up -d   # Nextcloud
+docker compose -f stack/docker-compose.cloud.yml up -d   # Immich + Syncthing
 ```
 
 Leave Minecraft and the desktop stopped — the dashboard starts those on demand.
@@ -94,7 +99,7 @@ Full walkthrough: **[docs/install.md](docs/install.md)**.
 | **Containers** | Every workload, live usage, logs, start/stop/restart |
 | **Minecraft** | Players, TPS, MSPT, world size, backups, RCON console |
 | **Media** | Streams, and the direct-play vs transcode split that decides your CPU |
-| **Cloud** | Nextcloud and how the tiers are wired into it |
+| **Cloud** | Immich and Syncthing, and how the tiers feed them |
 | **Storage** | Three-tier browser, transfers between tiers, automatic tiering rules |
 | **Desktops** | On-demand browser desktop |
 | **Network** | Throughput and the 80 TB monthly allowance, with a projection |
@@ -108,11 +113,16 @@ Full walkthrough: **[docs/install.md](docs/install.md)**.
 
 The split is the point:
 
-- **Public**, with automatic HTTPS — Jellyfin and Nextcloud. Share a link;
-  use them on a phone without the VPN.
-- **VPN only** — the dashboard, and anything that can change the machine. A
-  leaked dashboard password is not enough, because nothing routes there from
-  the internet.
+- **Public**, with automatic HTTPS — Jellyfin and Immich. Share a link; back up
+  photos from a phone without the VPN. Their *administrative* surfaces are not
+  public: Jellyfin's plugin, config and log endpoints return 403 off-VPN, login
+  endpoints are rate-limited, and account enumeration is closed.
+- **VPN only** — the dashboard, Syncthing's UI, and anything that can change the
+  machine. A leaked dashboard password is not enough, because nothing routes
+  there from the internet.
+
+Do not put Cloudflare's proxy in front of the private hostnames — it replaces
+the client address that check depends on. See [edge.md](docs/edge.md).
 
 On top of that: argon2id password hashing, mandatory TOTP with replay
 protection, optional passkeys, single-use recovery codes, hashed session
@@ -143,6 +153,7 @@ SERVE_WEB=true ./scripts/smoke-test.sh scripts/ui-check.mjs     # browser, all p
 | Layer | What it is |
 |---|---|
 | `packages/shared` | Types shared by the API and the dashboard — the wire contract, written once |
+| `stack/caddy` | Two Caddyfile variants sharing one `sites.caddy`, plus the plugin build |
 | `apps/api` | Fastify, SQLite, dockerode. No ORM, no framework magic |
 | `apps/web` | React and Vite. Charts are hand-drawn SVG, no charting library |
 | `stack/` | Compose files and the Caddy configuration |
@@ -151,6 +162,7 @@ SERVE_WEB=true ./scripts/smoke-test.sh scripts/ui-check.mjs     # browser, all p
 ## Documentation
 
 - **[install.md](docs/install.md)** — full setup, DNS, VPN, first run
+- **[edge.md](docs/edge.md)** — Cloudflare, certificates, what is exposed
 - **[architecture.md](docs/architecture.md)** — how the pieces fit, and why
 - **[storage.md](docs/storage.md)** — the three tiers, rclone, automatic tiering
 - **[security.md](docs/security.md)** — threat model and every control
