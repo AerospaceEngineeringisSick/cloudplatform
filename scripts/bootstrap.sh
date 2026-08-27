@@ -18,6 +18,45 @@ ok()    { echo -e "  ${GREEN}ok${RESET}  $*"; }
 warn()  { echo -e "  ${YELLOW}!${RESET}   $*"; }
 die()   { echo -e "  ${RED}✗${RESET}   $*" >&2; exit 1; }
 
+# Reads .env the way Docker Compose does, rather than sourcing it as shell.
+#
+# Compose's .env is NOT a shell script: values may contain spaces unquoted and
+# are never expanded. `. ./.env` therefore chokes on a perfectly valid line
+# like `WEBAUTHN_RP_NAME=Cloud Platform`, treating "Platform" as a command.
+# Parsing it here also means a stray line in .env cannot execute anything.
+load_env() {
+  local line key value
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Skip blanks, comments and anything that is not KEY=VALUE.
+    case "$line" in
+      ''|'#'*) continue ;;
+      *=*) ;;
+      *) continue ;;
+    esac
+
+    key=${line%%=*}
+    value=${line#*=}
+
+    # `export FOO=bar` is valid in some .env dialects; tolerate the prefix.
+    key=${key#export }
+    # Trim surrounding whitespace from the key.
+    key=$(printf '%s' "$key" | tr -d '[:space:]')
+
+    # Reject anything that is not a valid shell identifier.
+    case "$key" in
+      ''|[0-9]*|*[!A-Za-z0-9_]*) continue ;;
+    esac
+
+    # Strip one layer of matching quotes, as Compose does.
+    case "$value" in
+      \"*\") value=${value#\"}; value=${value%\"} ;;
+      \'*\') value=${value#\'}; value=${value%\'} ;;
+    esac
+
+    export "$key=$value"
+  done < .env
+}
+
 [ "$(id -u)" -eq 0 ] || die "Run this with sudo."
 
 # --------------------------------------------------------------- packages --
@@ -60,8 +99,7 @@ if [ ! -f .env ]; then
 fi
 ok ".env exists"
 
-# shellcheck disable=SC1091
-set -a; . ./.env; set +a
+load_env
 
 for required in DOMAIN ACME_EMAIL SESSION_SECRET; do
   [ -n "${!required:-}" ] || die "$required is not set in .env"
