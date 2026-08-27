@@ -1,0 +1,35 @@
+# Example rclone configuration for the HostBrr StorageBox.
+#
+# Copy to /root/.config/rclone/rclone.conf and fill in your own values, or
+# generate it interactively with `rclone config`.
+#
+# Key authentication is strongly preferred over a password:
+#     ssh-keygen -t ed25519 -f /root/.ssh/storagebox
+#     ssh-copy-id -i /root/.ssh/storagebox.pub -p 22 USER@HOST
+
+[storagebox]
+type = sftp
+host = your-storagebox-host.example
+user = your-username
+port = 22
+key_file = /root/.ssh/storagebox
+# Or, if you must use a password, obscure it first:
+#     rclone obscure 'your-password'
+# pass = OBSCURED_VALUE_HERE
+shell_type = unix
+md5sum_command = md5sum
+sha1sum_command = sha1sum
+# Keeps a dropped connection from hanging the mount indefinitely.
+idle_timeout = 60s
+
+# An encrypted view of the Vault directory. Anything written through this
+# remote is unreadable on the provider's disks.
+#
+# Generate the two passwords with: rclone config
+[vault]
+type = crypt
+remote = storagebox:Vault
+filename_encryption = standard
+directory_name_encryption = true
+password = OBSCURED_PASSWORD
+password2 = OBSCURED_SALT

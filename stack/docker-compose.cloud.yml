@@ -1,0 +1,85 @@
+# Nextcloud with Postgres and Redis. Primary data lives on the local HDD;
+# the StorageBox is attached inside Nextcloud as external storage.
+name: cloud-nextcloud
+
+networks:
+  edge:
+    name: cloud-edge
+    external: true
+  internal:
+    internal: true
+
+volumes:
+  nextcloud-app:
+  postgres-data:
+
+services:
+  nextcloud:
+    image: nextcloud:30-apache
+    container_name: nextcloud
+    restart: unless-stopped
+    labels:
+      cloud.service: nextcloud
+    networks: [edge, internal]
+    volumes:
+      - nextcloud-app:/var/www/html
+      - ${HDD_PATH:-/mnt/hdd}/Cloud:/var/www/html/data
+      - ${STORAGEBOX_PATH:-/mnt/storagebox}:/mnt/storagebox
+    environment:
+      POSTGRES_HOST: database
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:?set NEXTCLOUD_DB_PASSWORD in .env}
+      REDIS_HOST: redis
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:-admin}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:?set NEXTCLOUD_ADMIN_PASSWORD in .env}
+      NEXTCLOUD_TRUSTED_DOMAINS: cloud.${DOMAIN}
+      OVERWRITEPROTOCOL: https
+      OVERWRITECLIURL: https://cloud.${DOMAIN}
+      PHP_MEMORY_LIMIT: 768M
+      PHP_UPLOAD_LIMIT: 10G
+    cpus: 1.0
+    mem_limit: 2g
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    security_opt:
+      - no-new-privileges:true
+
+  database:
+    image: postgres:16-alpine
+    container_name: nextcloud-db
+    restart: unless-stopped
+    labels:
+      cloud.service: database
+    networks: [internal]
+    volumes:
+      # Databases belong on NVMe, never on the HDD or a remote mount.
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:?set NEXTCLOUD_DB_PASSWORD in .env}
+    cpus: 1.0
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nextcloud"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    container_name: nextcloud-redis
+    restart: unless-stopped
+    labels:
+      cloud.service: cache
+    networks: [internal]
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true

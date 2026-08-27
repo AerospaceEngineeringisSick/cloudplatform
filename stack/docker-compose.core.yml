@@ -1,0 +1,96 @@
+# Core stack: the reverse proxy and the dashboard itself.
+#
+#   docker compose -f stack/docker-compose.core.yml up -d
+#
+# Everything else attaches to the `edge` network so Caddy can route to it.
+
+name: cloud-core
+
+networks:
+  edge:
+    name: cloud-edge
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:
+  dashboard-data:
+
+services:
+  proxy:
+    image: caddy:2.8-alpine
+    container_name: caddy
+    restart: unless-stopped
+    labels:
+      # Profiles and uptime checks address services by this label.
+      cloud.service: proxy
+    networks: [edge]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      # Used by the Caddyfile for the public hostnames.
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      TAILSCALE_CIDR: ${TAILSCALE_CIDR:-100.64.0.0/10}
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: cloud-dashboard:latest
+    container_name: dashboard
+    restart: unless-stopped
+    labels:
+      cloud.service: dashboard
+    networks: [edge]
+    # Bound to loopback only. Caddy publishes it on the VPN interface; it is
+    # never reachable directly from the internet.
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      # Controls containers, so it needs the Docker socket. This is effectively
+      # root on the host — see docs/security.md for the socket-proxy option.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - dashboard-data:/data
+      # Read the same storage tiers the host sees.
+      - ${HDD_PATH:-/mnt/hdd}:/mnt/hdd
+      - ${STORAGEBOX_PATH:-/mnt/storagebox}:/mnt/storagebox:rslave
+      - ${MINECRAFT_PATH:-/srv/minecraft}:/srv/minecraft
+      - ${RCLONE_CONFIG_PATH:-/root/.config/rclone/rclone.conf}:/root/.config/rclone/rclone.conf:ro
+      # Host metrics come from the real /proc, not the container's.
+      - /proc:/host/proc:ro
+    environment:
+      NODE_ENV: production
+      PUBLIC_ORIGIN: ${DASHBOARD_ORIGIN:?set DASHBOARD_ORIGIN in .env}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:?set WEBAUTHN_RP_ID in .env}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Cloud Platform}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      NET_IFACE: ${NET_IFACE:-eth0}
+      NET_ALLOWANCE_BYTES: ${NET_ALLOWANCE_BYTES:-87960930222080}
+      MOUNTS: "nvme:NVMe:/:nvme,hdd:HDD:/mnt/hdd:hdd,storagebox:StorageBox:/mnt/storagebox:remote"
+      JELLYFIN_URL: ${JELLYFIN_URL:-}
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
+      MC_RCON_HOST: ${MC_RCON_HOST:-minecraft}
+      MC_RCON_PORT: ${MC_RCON_PORT:-25575}
+      MC_RCON_PASSWORD: ${MC_RCON_PASSWORD:-}
+      MC_WORLD_PATH: /srv/minecraft
+      MC_BACKUP_PATH: /mnt/storagebox/Backups/Minecraft
+      RCLONE_REMOTE: ${RCLONE_REMOTE:-storagebox}
+      TRUST_PROXY: "true"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    # The dashboard reads /proc and controls cgroups; it cannot run unprivileged.
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - proxy

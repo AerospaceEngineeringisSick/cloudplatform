@@ -1,0 +1,44 @@
+# Jellyfin. Reads media from both the local HDD and the StorageBox, with the
+# transcode cache pinned to fast NVMe.
+name: cloud-media
+
+networks:
+  edge:
+    name: cloud-edge
+    external: true
+
+volumes:
+  jellyfin-config:
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:10.10.3
+    container_name: jellyfin
+    restart: unless-stopped
+    labels:
+      cloud.service: jellyfin
+    networks: [edge]
+    user: "${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - jellyfin-config:/config
+      # Transcoding writes constantly — keep it off the spinning disk.
+      - ${NVME_CACHE:-/var/cache/jellyfin}:/cache
+      - ${HDD_PATH:-/mnt/hdd}/Media:/media/local:ro
+      - ${STORAGEBOX_PATH:-/mnt/storagebox}/Media:/media/remote:ro
+    environment:
+      JELLYFIN_PublishedServerUrl: https://media.${DOMAIN}
+      # Software transcoding only; this VPS has no GPU to hand out.
+      JELLYFIN_FFmpeg__probesize: 50000000
+    # Resource limits here are only the starting point — the dashboard's
+    # profiles rewrite them live.
+    cpus: 2.0
+    mem_limit: 3g
+    mem_reservation: 1g
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8096/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

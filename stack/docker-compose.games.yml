@@ -1,0 +1,52 @@
+# Minecraft, started on demand. Starting this container makes the dashboard
+# switch the machine into Gaming mode automatically.
+name: cloud-games
+
+networks:
+  edge:
+    name: cloud-edge
+    external: true
+
+services:
+  minecraft:
+    image: itzg/minecraft-server:java21
+    container_name: minecraft
+    restart: "no"
+    labels:
+      cloud.service: minecraft
+    networks: [edge]
+    ports:
+      - "25565:25565"
+      # RCON stays on loopback — the dashboard reaches it over the edge network.
+      - "127.0.0.1:25575:25575"
+    volumes:
+      # The live world sits on NVMe; backups are copied to the StorageBox.
+      - ${MINECRAFT_PATH:-/srv/minecraft}:/data
+    environment:
+      EULA: "TRUE"
+      TYPE: PAPER
+      VERSION: ${MC_VERSION:-1.21.4}
+      # Paper reports TPS and MSPT, which the dashboard graphs.
+      MEMORY: ${MC_MEMORY:-6G}
+      MAX_PLAYERS: ${MC_MAX_PLAYERS:-12}
+      DIFFICULTY: normal
+      ENABLE_RCON: "true"
+      RCON_PASSWORD: ${MC_RCON_PASSWORD:?set MC_RCON_PASSWORD in .env}
+      RCON_PORT: 25575
+      ENABLE_WHITELIST: "true"
+      OVERRIDE_WHITELIST: "false"
+      # Aikar's flags: the standard tuning for a low-pause Minecraft heap.
+      USE_AIKAR_FLAGS: "true"
+      TZ: ${TZ:-Europe/London}
+    cpus: 3.25
+    mem_limit: 8g
+    mem_reservation: 4g
+    stop_grace_period: 120s
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "mc-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s

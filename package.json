@@ -1,0 +1,26 @@
+{
+  "name": "cloudplatform",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A personal cloud platform control centre",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build -w @cloud/shared && npm run build -w @cloud/api && npm run build -w @cloud/web",
+    "build:api": "npm run build -w @cloud/shared && npm run build -w @cloud/api",
+    "build:web": "npm run build -w @cloud/shared && npm run build -w @cloud/web",
+    "dev": "npm run dev -w @cloud/api & npm run dev -w @cloud/web",
+    "dev:api": "npm run dev -w @cloud/api",
+    "dev:web": "npm run dev -w @cloud/web",
+    "start": "node apps/api/dist/index.js",
+    "typecheck": "npm run typecheck -w @cloud/shared && npm run typecheck -w @cloud/api && npm run typecheck -w @cloud/web",
+    "test": "node --test apps/api/tests/*.test.mjs",
+    "test:build": "npm run build:api && node --test apps/api/tests/*.test.mjs"
+  }
+}

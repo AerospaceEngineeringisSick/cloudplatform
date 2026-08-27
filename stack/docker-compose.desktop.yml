@@ -1,0 +1,41 @@
+# A browser-delivered Linux desktop, started on demand.
+#
+# Deliberately lighter than a full Kasm deployment: one desktop for one person
+# does not need a workspace orchestrator.
+name: cloud-desktop
+
+networks:
+  edge:
+    name: cloud-edge
+    external: true
+
+volumes:
+  desktop-home:
+
+services:
+  desktop:
+    image: lscr.io/linuxserver/webtop:ubuntu-xfce
+    container_name: desktop
+    restart: "no"
+    labels:
+      cloud.service: desktop
+    networks: [edge]
+    ports:
+      # Reachable over the VPN only; Caddy does not publish it.
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - desktop-home:/config
+      - ${HDD_PATH:-/mnt/hdd}/Projects:/projects
+      - ${STORAGEBOX_PATH:-/mnt/storagebox}:/storagebox
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Europe/London}
+      # Without a password anyone on the VPN gets a root-capable desktop.
+      CUSTOM_USER: ${DESKTOP_USER:-luke}
+      PASSWORD: ${DESKTOP_PASSWORD:?set DESKTOP_PASSWORD in .env}
+    cpus: 2.0
+    mem_limit: 4g
+    shm_size: 1gb
+    security_opt:
+      - no-new-privileges:true
