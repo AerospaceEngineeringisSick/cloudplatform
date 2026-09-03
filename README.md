@@ -82,8 +82,8 @@ Then open `https://panel.<your-domain>` **over your VPN** and create the owner
 account. Bring up the rest as you want it:
 
 ```bash
-docker compose -f stack/docker-compose.media.yml up -d   # Jellyfin
-docker compose -f stack/docker-compose.cloud.yml up -d   # Immich + Syncthing
+sudo ./scripts/compose.sh media up -d   # Jellyfin
+sudo ./scripts/compose.sh cloud up -d   # Immich + Syncthing
 ```
 
 Leave Minecraft and the desktop stopped — the dashboard starts those on demand.
@@ -157,7 +157,7 @@ SERVE_WEB=true ./scripts/smoke-test.sh scripts/ui-check.mjs     # browser, all p
 | `apps/api` | Fastify, SQLite, dockerode. No ORM, no framework magic |
 | `apps/web` | React and Vite. Charts are hand-drawn SVG, no charting library |
 | `stack/` | Compose files and the Caddy configuration |
-| `scripts/` | Installer, StorageBox mount, test harnesses |
+| `scripts/` | Installer, the `docker compose` wrapper, StorageBox mount, test harnesses |
 
 ## Documentation
 

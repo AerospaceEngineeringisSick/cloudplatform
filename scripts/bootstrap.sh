@@ -24,6 +24,11 @@ die()   { echo -e "  ${RED}✗${RESET}   $*" >&2; exit 1; }
 # are never expanded. `. ./.env` therefore chokes on a perfectly valid line
 # like `WEBAUTHN_RP_NAME=Cloud Platform`, treating "Platform" as a command.
 # Parsing it here also means a stray line in .env cannot execute anything.
+#
+# This is for *this script's* own checks below. Compose reads .env itself, via
+# the --env-file that scripts/compose.sh passes — do not rely on these exports
+# reaching it, or a bare `docker compose -f stack/…` will look correct here and
+# fail for anyone running it by hand.
 load_env() {
   local line key value
   while IFS= read -r line || [ -n "$line" ]; do
@@ -101,7 +106,9 @@ ok ".env exists"
 
 load_env
 
-for required in DOMAIN ACME_EMAIL SESSION_SECRET; do
+# The compose files refuse to start without these, so fail here where the
+# message is friendlier rather than mid-`up`.
+for required in DOMAIN ACME_EMAIL SESSION_SECRET HDD_PATH STORAGEBOX_PATH MINECRAFT_PATH; do
   [ -n "${!required:-}" ] || die "$required is not set in .env"
 done
 ok "required settings present"
@@ -114,10 +121,10 @@ fi
 
 step "Storage tiers"
 
-HDD_PATH="${HDD_PATH:-/mnt/hdd}"
-STORAGEBOX_PATH="${STORAGEBOX_PATH:-/mnt/storagebox}"
+# No defaults for the three mount paths: the compose files have none either,
+# and a default here would create a directory layout somewhere the containers
+# will never look.
 NVME_CACHE="${NVME_CACHE:-/var/cache/jellyfin}"
-MINECRAFT_PATH="${MINECRAFT_PATH:-/srv/minecraft}"
 
 mkdir -p "$NVME_CACHE" "$MINECRAFT_PATH" "${IMMICH_DB_PATH:-/var/lib/immich/postgres}"
 
@@ -142,13 +149,13 @@ fi
 # ------------------------------------------------------------------ build --
 
 step "Building the dashboard image"
-docker compose -f stack/docker-compose.core.yml build dashboard
+./scripts/compose.sh core build dashboard
 ok "image built"
 
 # ------------------------------------------------------------------- boot --
 
 step "Starting the core stack"
-docker compose -f stack/docker-compose.core.yml up -d
+./scripts/compose.sh core up -d
 ok "proxy and dashboard running"
 
 echo
@@ -156,8 +163,8 @@ echo "${BOLD}Next steps${RESET}"
 echo "  1. Open ${BOLD}https://panel.${DOMAIN}${RESET} over your VPN and create the owner account."
 echo "     ${DIM}You will be required to set up two-factor authentication immediately.${RESET}"
 echo "  2. Bring up the services you want:"
-echo "       ${DIM}docker compose -f stack/docker-compose.media.yml up -d${RESET}"
-echo "       ${DIM}docker compose -f stack/docker-compose.cloud.yml up -d${RESET}   # photos + sync"
+echo "       ${DIM}sudo ./scripts/compose.sh media up -d${RESET}"
+echo "       ${DIM}sudo ./scripts/compose.sh cloud up -d${RESET}   # photos + sync"
 echo "  3. Leave Minecraft and the desktop stopped — the dashboard starts them on demand."
 echo
 echo "  ${DIM}The dashboard is bound to loopback and published only on the VPN.${RESET}"

@@ -1,6 +1,6 @@
 # Core stack: the reverse proxy and the dashboard itself.
 #
-#   docker compose -f stack/docker-compose.core.yml up -d
+#   sudo ./scripts/compose.sh core up -d
 #
 # Everything else attaches to the `edge` network so Caddy can route to it.
 
@@ -46,8 +46,8 @@ services:
       # Lets the proxy reach services published on the host's loopback.
       - "host.docker.internal:host-gateway"
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env, and use scripts/compose.sh}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env, and use scripts/compose.sh}
       TAILSCALE_CIDR: ${TAILSCALE_CIDR:-100.64.0.0/10}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
     healthcheck:
@@ -76,18 +76,18 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - dashboard-data:/data
       # Read the same storage tiers the host sees.
-      - ${HDD_PATH:-/mnt/hdd}:/mnt/hdd
-      - ${STORAGEBOX_PATH:-/mnt/storagebox}:/mnt/storagebox:rslave
-      - ${MINECRAFT_PATH:-/srv/minecraft}:/srv/minecraft
+      - ${HDD_PATH:?set HDD_PATH in .env, and use scripts/compose.sh}:/mnt/hdd
+      - ${STORAGEBOX_PATH:?set STORAGEBOX_PATH in .env, and use scripts/compose.sh}:/mnt/storagebox:rslave
+      - ${MINECRAFT_PATH:?set MINECRAFT_PATH in .env, and use scripts/compose.sh}:/srv/minecraft
       - ${RCLONE_CONFIG_PATH:-/root/.config/rclone/rclone.conf}:/root/.config/rclone/rclone.conf:ro
       # Host metrics come from the real /proc, not the container's.
       - /proc:/host/proc:ro
     environment:
       NODE_ENV: production
-      PUBLIC_ORIGIN: ${DASHBOARD_ORIGIN:?set DASHBOARD_ORIGIN in .env}
-      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:?set WEBAUTHN_RP_ID in .env}
+      PUBLIC_ORIGIN: ${DASHBOARD_ORIGIN:?set DASHBOARD_ORIGIN in .env, and use scripts/compose.sh}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:?set WEBAUTHN_RP_ID in .env, and use scripts/compose.sh}
       WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Cloud Platform}
-      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env, and use scripts/compose.sh}
       NET_IFACE: ${NET_IFACE:-eth0}
       NET_ALLOWANCE_BYTES: ${NET_ALLOWANCE_BYTES:-87960930222080}
       MOUNTS: "nvme:NVMe:/:nvme,hdd:HDD:/mnt/hdd:hdd,storagebox:StorageBox:/mnt/storagebox:remote"

@@ -56,6 +56,41 @@ and it is competing, pause it by hand.
 **Memory pressure.** Overview → if swap is in use, something has an oversized
 ceiling. Compute → Custom allocation, and check the total against 16 GiB.
 
+## Compose says a variable is "missing a value"
+
+```
+error while interpolating services.dashboard.environment.SESSION_SECRET:
+  required variable SESSION_SECRET is missing a value
+```
+
+Your `.env` is fine. The command is wrong:
+
+```bash
+docker compose -f stack/docker-compose.core.yml up -d      # reads stack/.env
+sudo ./scripts/compose.sh core up -d                       # reads ./.env
+```
+
+Compose resolves `.env` against the **project directory**, and that defaults to
+the directory holding the first `-f` file — `stack/`, not the repository root.
+It never opens `/opt/cloudplatform/.env`.
+
+`scripts/bootstrap.sh` used to hide this, because it exports the values into
+its own environment before calling Compose. Anything typed by hand does not.
+
+Two other fixes that look right and are not:
+
+- `--project-directory .` moves the project root as well, so `build: ..` in the
+  dashboard service resolves to the *parent* of the repository.
+- Copying `.env` into `stack/` gives you two files to keep in step.
+
+`docker compose --env-file .env -f stack/…` is exactly what the wrapper runs,
+if you would rather type it.
+
+**The silent version of this.** Only required variables announce themselves.
+Defaulted ones do not: `HDD_PATH` used to fall back to `/mnt/hdd`, so Jellyfin
+would start cleanly with empty libraries when the disk was at `/mnt/data`. The
+three mount paths are now required for exactly this reason.
+
 ## A container will not start
 
 ```bash
@@ -131,19 +166,19 @@ else heavy is running.
 sudo rclone lsd storagebox:Backups/VPS
 
 # Restore the dashboard database
-sudo docker compose -f stack/docker-compose.core.yml stop dashboard
+sudo ./scripts/compose.sh core stop dashboard
 sudo rclone copy storagebox:Backups/VPS/2026-01-15/cloud.db /tmp/
 sudo docker run --rm -v cloud-core_dashboard-data:/data -v /tmp:/restore \
   alpine cp /restore/cloud.db /data/cloud.db
-sudo docker compose -f stack/docker-compose.core.yml start dashboard
+sudo ./scripts/compose.sh core start dashboard
 ```
 
 For the Minecraft world:
 
 ```bash
-sudo docker compose -f stack/docker-compose.games.yml stop minecraft
+sudo ./scripts/compose.sh games stop minecraft
 sudo rclone copy storagebox:Backups/Minecraft/world-2026-01-15T04-00-00 /srv/minecraft
-sudo docker compose -f stack/docker-compose.games.yml start minecraft
+sudo ./scripts/compose.sh games start minecraft
 ```
 
 Stop the service before restoring its data. Always.
@@ -164,7 +199,7 @@ source, which makes it look like Caddy is broken; it is really a version skew.
 exactly this reason. If you bump one, bump them together and rebuild:
 
 ```bash
-docker compose -f stack/docker-compose.core.yml build --no-cache proxy
+sudo ./scripts/compose.sh core build --no-cache proxy
 ```
 
 The image build ends with a `caddy list-modules` check, so a plugin that fails

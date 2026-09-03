@@ -9,7 +9,7 @@
 # Web access to arbitrary files is already in the dashboard's own Storage page,
 # so nothing here needs to reimplement it.
 #
-#   docker compose -f stack/docker-compose.cloud.yml up -d
+#   sudo ./scripts/compose.sh cloud up -d
 
 name: cloud-personal
 
@@ -36,12 +36,12 @@ services:
     networks: [edge, internal]
     volumes:
       # Photos live on the warm tier; the tiering sweep can move old ones down.
-      - ${HDD_PATH:-/mnt/hdd}/Photos:/data
+      - ${HDD_PATH:?set HDD_PATH in .env, and use scripts/compose.sh}/Photos:/data
       - /etc/localtime:/etc/localtime:ro
     environment:
       DB_HOSTNAME: database
       DB_USERNAME: ${IMMICH_DB_USER:-immich}
-      DB_PASSWORD: ${IMMICH_DB_PASSWORD:?set IMMICH_DB_PASSWORD in .env}
+      DB_PASSWORD: ${IMMICH_DB_PASSWORD:?set IMMICH_DB_PASSWORD in .env, and use scripts/compose.sh}
       DB_DATABASE_NAME: ${IMMICH_DB_NAME:-immich}
       REDIS_HOSTNAME: cache
       # Without this Immich logs Caddy's address for every request, which makes
@@ -108,7 +108,7 @@ services:
       - ${IMMICH_DB_PATH:-/var/lib/immich/postgres}:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: ${IMMICH_DB_USER:-immich}
-      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD:?set IMMICH_DB_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD:?set IMMICH_DB_PASSWORD in .env, and use scripts/compose.sh}
       POSTGRES_DB: ${IMMICH_DB_NAME:-immich}
       POSTGRES_INITDB_ARGS: '--data-checksums'
     shm_size: 128mb
@@ -158,8 +158,8 @@ services:
       - "127.0.0.1:8384:8384"
     volumes:
       - syncthing-config:/var/syncthing/config
-      - ${HDD_PATH:-/mnt/hdd}/Sync:/var/syncthing/Sync
-      - ${HDD_PATH:-/mnt/hdd}/Projects:/var/syncthing/Projects
+      - ${HDD_PATH:?set HDD_PATH in .env, and use scripts/compose.sh}/Sync:/var/syncthing/Sync
+      - ${HDD_PATH:?set HDD_PATH in .env, and use scripts/compose.sh}/Projects:/var/syncthing/Projects
     environment:
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}

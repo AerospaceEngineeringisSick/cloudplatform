@@ -1,5 +1,7 @@
 # Jellyfin. Reads media from both the local HDD and the StorageBox, with the
 # transcode cache pinned to fast NVMe.
+#
+#   sudo ./scripts/compose.sh media up -d
 name: cloud-media
 
 networks:
@@ -23,8 +25,8 @@ services:
       - jellyfin-config:/config
       # Transcoding writes constantly — keep it off the spinning disk.
       - ${NVME_CACHE:-/var/cache/jellyfin}:/cache
-      - ${HDD_PATH:-/mnt/hdd}/Media:/media/local:ro
-      - ${STORAGEBOX_PATH:-/mnt/storagebox}/Media:/media/remote:ro
+      - ${HDD_PATH:?set HDD_PATH in .env, and use scripts/compose.sh}/Media:/media/local:ro
+      - ${STORAGEBOX_PATH:?set STORAGEBOX_PATH in .env, and use scripts/compose.sh}/Media:/media/remote:ro
     environment:
       JELLYFIN_PublishedServerUrl: https://media.${DOMAIN}
       # Software transcoding only; this VPS has no GPU to hand out.

@@ -1,5 +1,7 @@
 # Minecraft, started on demand. Starting this container makes the dashboard
 # switch the machine into Gaming mode automatically.
+#
+#   sudo ./scripts/compose.sh games up -d
 name: cloud-games
 
 networks:
@@ -21,7 +23,7 @@ services:
       - "127.0.0.1:25575:25575"
     volumes:
       # The live world sits on NVMe; backups are copied to the StorageBox.
-      - ${MINECRAFT_PATH:-/srv/minecraft}:/data
+      - ${MINECRAFT_PATH:?set MINECRAFT_PATH in .env, and use scripts/compose.sh}:/data
     environment:
       EULA: "TRUE"
       TYPE: PAPER
@@ -31,7 +33,7 @@ services:
       MAX_PLAYERS: ${MC_MAX_PLAYERS:-12}
       DIFFICULTY: normal
       ENABLE_RCON: "true"
-      RCON_PASSWORD: ${MC_RCON_PASSWORD:?set MC_RCON_PASSWORD in .env}
+      RCON_PASSWORD: ${MC_RCON_PASSWORD:?set MC_RCON_PASSWORD in .env, and use scripts/compose.sh}
       RCON_PORT: 25575
       ENABLE_WHITELIST: "true"
       OVERRIDE_WHITELIST: "false"

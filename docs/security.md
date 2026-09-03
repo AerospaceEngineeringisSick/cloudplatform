@@ -219,7 +219,7 @@ other accounts is acceptable.
 
 ## If something is compromised
 
-1. `docker compose -f stack/docker-compose.core.yml stop dashboard` — the
+1. `sudo ./scripts/compose.sh core stop dashboard` — the
    control plane is the crown jewels.
 2. Revoke every session: Security → Active sessions, or delete all rows from
    `sessions` in `/data/cloud.db`.

@@ -205,11 +205,23 @@ rather than a typed code.
 
 ## 6. The services
 
+Everything from here on goes through `scripts/compose.sh`, which is a one-line
+wrapper around `docker compose`. It takes a stack name and passes the rest
+straight through:
+
 ```bash
 cd /opt/cloudplatform
-docker compose -f stack/docker-compose.media.yml up -d
-docker compose -f stack/docker-compose.cloud.yml up -d
+sudo ./scripts/compose.sh media up -d
+sudo ./scripts/compose.sh cloud up -d
 ```
+
+> **Do not call `docker compose -f stack/…` directly.** Compose looks for
+> `.env` in the *project directory*, which is the directory holding the `-f`
+> file — so it reads `stack/.env`, which does not exist, and never sees the
+> `.env` you just filled in. The wrapper points `--env-file` at the real one.
+> `--project-directory .` is not a substitute: it also re-roots every build
+> context. The stacks now refuse to start rather than silently mounting
+> `/mnt/hdd` when your disk is somewhere else.
 
 **Jellyfin** — finish setup at `https://media.example.com`. Add two libraries:
 `/media/local` (the HDD) and `/media/remote` (the StorageBox). Then create an
@@ -217,7 +229,7 @@ API key under Dashboard → API Keys, put it in `.env` as `JELLYFIN_API_KEY`, an
 restart the dashboard so it can show streams and transcodes:
 
 ```bash
-docker compose -f stack/docker-compose.core.yml up -d --force-recreate dashboard
+sudo ./scripts/compose.sh core up -d --force-recreate dashboard
 ```
 
 **Immich** — finish setup at `https://photos.example.com`. The first account
@@ -238,8 +250,8 @@ peer-to-peer on port 22000 and never passes through the proxy.
 **Minecraft and the desktop** — build the images but leave them stopped:
 
 ```bash
-docker compose -f stack/docker-compose.games.yml create
-docker compose -f stack/docker-compose.desktop.yml create
+sudo ./scripts/compose.sh games create
+sudo ./scripts/compose.sh desktop create
 ```
 
 The dashboard starts them on demand and switches profiles around them.
@@ -258,7 +270,7 @@ StorageBox reads *offline*, see [runbook.md](runbook.md).
 ```bash
 cd /opt/cloudplatform
 git pull
-docker compose -f stack/docker-compose.core.yml up -d --build
+sudo ./scripts/compose.sh core up -d --build
 ```
 
 The database migrates itself on start. Migrations are append-only, so a
